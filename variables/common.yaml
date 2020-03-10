@@ -1,0 +1,71 @@
+# define masters hostname
+master1_host: 'ansible-test'
+master2_host: 'ta-fiona'
+master3_host: 'ta-kailen'
+
+# define ip address
+master1_ip: '192.168.33.11'
+master2_ip: '192.168.33.33'
+master3_ip: '192.168.33.13'
+vip: '192.168.33.105'
+
+# interface
+iface: 'eth1'
+
+# kubernetes version
+revision: 'v1.15.1'
+
+ssh_pub_key: './ssh/id_rsa.pub'
+src_cert: './cert'
+src_syslog_conf: './conf/rsyslog.conf'
+src_keepalive_conf: './conf/keepalived.conf'
+src_haproxy_conf: './conf/haproxy.cfg'
+src_etcd_enviorn: './conf/etcd.env'
+src_etcd_daemon: './conf/etcd.service'
+src_plugin: './plugin'
+
+# define keepalived level
+master1_level: '150'
+master2_level: '100'
+master3_level: '50'
+
+# define keepalived role
+master1_role: 'MASTER'
+master2_role: 'BACKUP'
+master3_role: 'BACKUP'
+
+# load balancer configuration
+log_folder: '/var/log/haproxy'
+haproxy_conf: '/etc/haproxy/haproxy.cfg'
+keepalive_conf: '/etc/keepalived/keepalived.conf'
+keepalive_daemon: '/etc/sysconfig/keepalived'
+syslog_daemon: '/etc/rsyslog.conf'
+haproxy_log_rotate: '/etc/logrotate.d/haproxy.logrotate'
+
+# etcd configuration
+etcd_daemon: '/usr/lib/systemd/system'
+etcd_enviorn: '/etc'
+
+# etcd generate certificate location
+etcd_cert: '/etc/etcd/pki'
+
+# plugin execution path
+remote_plugin: '/srv'
+
+# kubeadm init configuration
+kubadm_init: '/srv/plugin/initial/kubeadm-init.yaml'
+
+# ingress deployment configuration
+ingress_deploy: '/srv/plugin/ingress_controller/ingress-deploy.yaml'
+dashboard_deploy: '/srv/plugin/dashboard/kubernetes-dashboard.yaml'
+
+# service daemon
+sevice_daemon:
+    - 'docker'
+    - 'rsyslog'
+    - 'haproxy'
+    - 'keepalived'
+    - 'etcd'
+
+# kubernetes cert location
+kube_cert: '/etc/kubernetes/pki'

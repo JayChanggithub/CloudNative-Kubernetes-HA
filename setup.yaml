@@ -1,0 +1,726 @@
+#!/usr/bin/env ansible-playbook
+
+- hosts: all
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Test connectivity
+      ping:
+      register: result
+
+    - name: Print result
+      debug:
+        msg: "{{ result['ping'] }}"
+
+    - name: Deploy public key to nodes
+      shell: | 
+        if [ $(ls -al ~/.ssh/ | grep -ci 'id_rsa') -ne 0 ]; then
+            echo '~/.ssh/ not empty.'
+            rm -rf ~/.ssh/*
+        fi
+        yes | cp -rf ./ssh/id_rsa ~/.ssh/
+        chmod 700 ~/.ssh/id_rsa
+        sshpass -p "{{ ansible_ssh_pass }}" \
+        ssh-copy-id -i {{ ssh_pub_key }} \
+        root@{{ item }} -o StrictHostKeychecking=no
+      args:
+        executable: /bin/bash
+      delegate_to: "localhost"
+      with_items:
+        - "{{ master2_ip }}"
+        - "{{ master3_ip }}"
+        - "{{ master1_ip }}"
+      register: pub_key_result
+
+    - name: Print public key result
+      debug:
+        msg: "{{ pub_key_result.results }}"
+
+    - name: Defined the deploy directory
+      shell: echo /tmp/deploy
+      register: deploy_dir
+
+    - name: Showing the execute path
+      debug:
+        msg: "{{ deploy_dir.stdout }}"
+
+    - name: Delete before directory
+      file:
+        path: "{{ deploy_dir.stdout }}"
+        state: absent
+
+    - name: Create deploy directory
+      file:
+        path: "{{ deploy_dir.stdout }}"
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+  
+    - name: Delete file of within reports directory
+      shell: |
+        if [ "$(ls -a './reports' | grep -v '^\.$' \
+                | grep -v '^\..$' \
+                | grep -v '.initial')" != "" ]; then
+            rm -rf ./reports/*
+        fi
+      delegate_to: "localhost"
+
+    - name: Copy script folder to remote host
+      copy: src={{ item.src }} dest={{ item.dest }}
+      with_items:
+        - { src: './README.md', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './tools', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './prerequisite.sh', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './reports', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './lib', dest: "{{ deploy_dir.stdout }}" }
+
+    - name: Installed the etcd agent
+      shell: |
+        tar -xzvf ./tools/etcd-v3.3.9-linux-amd64.tar.gz \
+           --strip-components=1 \
+           -C /usr/local/bin/
+        chmod +x /usr/local/bin/etcd*
+        chown -R root:root /usr/local/bin/etcd*
+      args:
+        chdir: "{{ deploy_dir.stdout }}"
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Showing the shell script process
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Execute remote host shell script
+      shell:
+        cmd: bash "{{ deploy_dir.stdout }}"/prerequisite.sh
+        chdir: "{{ deploy_dir.stdout }}"
+      args:
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Showing the shell script process
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Create haproxy log folder
+      file:
+        path: "{{ log_folder }}"
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+
+    - name: Touch haproxy log rotate
+      file:
+        path: "{{ haproxy_log_rotate }}"
+        state: touch
+        mode: 0755
+
+    - name: Delete before directory "{{ remote_plugin }}/plugin"
+      file:
+        path: "{{ remote_plugin }}/plugin"
+        state: absent
+
+    - name: Copy "{{ src_plugin }}" to remote executed location "{{ remote_plugin }}/plugin"
+      copy:
+        src: "{{ src_plugin }}"
+        dest: "{{ remote_plugin }}"
+        owner: root
+        group: root
+        mode: 0755
+
+    - name: Copy configuration file to remote
+      copy: src={{ item.src }} dest={{ item.dest }}
+      with_items:
+        - { src: "{{ src_syslog_conf }}", dest: "{{ syslog_daemon }}", owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_keepalive_conf }}", dest: "{{ keepalive_conf }}", owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_haproxy_conf }}", dest: "{{ haproxy_conf }}", owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_etcd_enviorn }}", dest: "{{ etcd_enviorn }}", owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_etcd_daemon }}", dest: "{{ etcd_daemon }}", owner: root, mode: 0755, backup: yes, force: yes }
+
+    - name: Modified the haproxy.cfg
+      replace:
+        path: "{{ haproxy_conf }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "master1_host", replace: "{{ master1_host }}" }
+        - { regexp: "master2_host", replace: "{{ master2_host }}" }
+        - { regexp: "master3_host", replace: "{{ master3_host }}" }
+        - { regexp: "master1_ip", replace: "{{ master1_ip }}" }
+        - { regexp: "master2_ip", replace: "{{ master2_ip }}" }
+        - { regexp: "master3_ip", replace: "{{ master3_ip }}" }
+      tags:
+        - haproxy.cfg
+
+    - name: Edit the log rotate content
+      blockinfile:
+        path: "{{ haproxy_log_rotate }}"
+        marker: "# {mark} haproxy log rotate"
+        create: yes
+        block: |
+                /var/log/haproxy/haproxy.log {
+                    missingok
+                    notifempty
+                    sharedscripts
+                    rotate 7
+                    daily
+                    compress
+                    postrotate
+                        reload rsyslog >/dev/null 2>&1 || true
+                    endscript
+                }
+
+    - name: Edit the "{{ keepalive_daemon }}" configuration
+      replace:
+        path: "{{ keepalive_daemon }}"
+        replace: 'KEEPALIVED_OPTIONS="-D -d -S 0"'
+        regexp: 'KEEPALIVED_OPTIONS="-D"'
+      tags:
+        - "{{ keepalive_daemon }}"
+
+    - name: Set the master information within hosts file
+      lineinfile:
+        dest: /etc/hosts
+        line: "{{ item.line }}"
+      with_items:
+        - { line: "{{ master1_ip }}    {{ master1_host }}", insertbefore: BOF }
+        - { line: "{{ master2_ip }}    {{ master2_host }}", insertbefore: BOF }
+        - { line: "{{ master3_ip }}    {{ master3_host }}", insertbefore: BOF }
+
+    - name: Create master2 master3 etcd folder
+      file:
+        path: '/etc/etcd'
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+
+- hosts: "{{ master1_ip }}"
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Create deploy directory
+      file:
+        path: "{{ etcd_cert }}"
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+
+    - name: Copy file to remote
+      copy: src={{ item.src }} dest={{ item.dest }}
+      with_items:
+        - { src: "{{ src_cert }}/ca-config.json", dest: '{{ etcd_cert }}', owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_cert }}/ca-csr.json", dest: '{{ etcd_cert }}', owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_cert }}/client.json", dest: '{{ etcd_cert }}', owner: root, mode: 0755, backup: yes, force: yes }
+        - { src: "{{ src_cert }}/etcd.json", dest: '{{ etcd_cert }}', owner: root, mode: 0755, backup: yes, force: yes }
+
+    - name: Modified etcd.json
+      replace:
+        path: "{{ etcd_cert }}/etcd.json"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "\"master1_ip\"", replace: "\"{{ master1_ip }}\"" }
+        - { regexp: "\"master2_ip\"", replace: "\"{{ master2_ip }}\"" }
+        - { regexp: "\"master3_ip\"", replace: "\"{{ master3_ip }}\"" }
+      tags:
+        - etcd.json
+
+    - name: Generated CA key from master1
+      shell: |
+        cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client client.json | cfssljson -bare client -
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server etcd.json | cfssljson -bare server
+        cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=peer etcd.json | cfssljson -bare peer
+        ls -a | grep -v '^\.$' | grep -v '^\..$' | wc -l
+      args:
+        chdir: "{{ etcd_cert }}"
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Showing the shell script process
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Delete file of within cache directory
+      shell: |
+        if [ "$(ls -a './cache' | grep -v '^\.$' | grep -v '^\..$' | grep -v '.initial')" != "" ]; then
+            rm -rf ./cache/*
+        fi
+      delegate_to: "localhost"
+
+    - name: Find files to copy
+      shell: ls -a "{{ etcd_cert }}" | grep -v '^\.$' | grep -v '^\..$'
+      register: files_to_copy
+
+    - name: Print variable
+      debug:
+        msg: "{{ files_to_copy.stdout_lines }}"
+
+    - name: Fetch "{{ etcd_cert }}" back
+      fetch:
+        src: "{{ etcd_cert}}/{{ item }}"
+        dest: './cache/'
+        flat: yes
+      with_items: "{{ files_to_copy.stdout_lines }}"
+
+    - name: Modified "{{ ingress_deploy }}" configuration
+      replace:
+        path: "{{ ingress_deploy }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "HOST_IP1", replace: "{{ master1_host }}" }
+        - { regexp: "HOST_IP2", replace: "{{ master2_host }}" }
+        - { regexp: "HOST_IP3", replace: "{{ master3_host }}" }
+      tags:
+        - "{{ ingress_deploy }}"
+
+    - name: Modified "{{ dashboard_deploy }}" configuration
+      replace:
+        path: "{{ dashboard_deploy }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "HOST_IP1", replace: "{{ master1_host }}" }
+        - { regexp: "HOST_IP2", replace: "{{ master2_host }}" }
+        - { regexp: "HOST_IP3", replace: "{{ master3_host }}" }
+      tags:
+        - "{{ dashboard_deploy }}"
+
+    - name: Modified "{{ keepalive_conf }}" configuration
+      replace:
+        path: "{{ keepalive_conf }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ master1_host }}" }
+        - { regexp: "MASTER", replace: "{{ master1_role }}" }
+        - { regexp: "iface", replace: "{{ iface }}" }
+        - { regexp: "LEVEL", replace: "{{ master1_level }}" }
+        - { regexp: "my_ip", replace: "{{ master1_ip }}" }
+        - { regexp: "HOST2_IP", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST3_IP", replace: "{{ master3_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+      tags:
+        - keepalived.conf
+
+    - name: Modified "{{ etcd_enviorn }}/etcd.env" configuration
+      replace:
+        path: "{{ etcd_enviorn }}/etcd.env"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master1_ip }}" }
+      tags:
+        - etcd.env
+
+    - name: Modified "{{ etcd_daemon }}/etcd.service" configuration
+      replace:
+        path: "{{ etcd_daemon }}/etcd.service"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master1_ip }}" }
+        - { regexp: "each_ip1", replace: "{{ master2_ip }}" }
+        - { regexp: "each_ip2", replace: "{{ master3_ip }}" }
+        - { regexp: "master2", replace: "{{ master2_host }}" }
+        - { regexp: "master3", replace: "{{ master3_host }}" }
+      tags:
+        - etcd.service
+
+    - name: Modified "{{ kubadm_init }}" configuration
+      replace:
+        path: "{{ kubadm_init }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master1_ip }}" }
+        - { regexp: "HOSTNAME1", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "HOSTNAME2", replace: "{{ master2_host }}" }
+        - { regexp: "HOSTNAME3", replace: "{{ master3_host }}" }
+        - { regexp: "HOST_IP1", replace: "{{ master1_ip }}" }
+        - { regexp: "HOST_IP2", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST_IP3", replace: "{{ master3_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+        - { regexp: "revision", replace: "{{ revision }}" }
+      tags:
+        - "{{ kubadm_init }}"
+
+- hosts: "{{ master2_ip }}"
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Modified "{{ keepalive_conf }}" configuration
+      replace:
+        path: "{{ keepalive_conf }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "MASTER", replace: "{{ master2_role }}" }
+        - { regexp: "iface", replace: "{{ iface }}" }
+        - { regexp: "LEVEL", replace: "{{ master2_level }}" }
+        - { regexp: "my_ip", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST2_IP", replace: "{{ master1_ip }}" }
+        - { regexp: "HOST3_IP", replace: "{{ master3_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+      tags:
+        - keepalived.conf
+
+    - name: Modified "{{ etcd_enviorn }}/etcd.env" configuration
+      replace:
+        path: "{{ etcd_enviorn }}/etcd.env"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master2_ip }}" }
+      tags:
+        - etcd.env
+
+    - name: Modified "{{ etcd_daemon }}/etcd.service" configuration
+      replace:
+        path: "{{ etcd_daemon }}/etcd.service"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master2_ip }}" }
+        - { regexp: "each_ip1", replace: "{{ master1_ip }}" }
+        - { regexp: "each_ip2", replace: "{{ master3_ip }}" }
+        - { regexp: "master2", replace: "{{ master1_host }}" }
+        - { regexp: "master3", replace: "{{ master3_host }}" }
+      tags:
+        - etcd.service
+
+    - name: Modified "{{ kubadm_init }}" configuration
+      replace:
+        path: "{{ kubadm_init }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master2_ip }}" }
+        - { regexp: "HOSTNAME1", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "HOSTNAME2", replace: "{{ master1_host }}" }
+        - { regexp: "HOSTNAME3", replace: "{{ master3_host }}" }
+        - { regexp: "HOST_IP1", replace: "{{ master1_ip }}" }
+        - { regexp: "HOST_IP2", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST_IP3", replace: "{{ master3_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+        - { regexp: "revision", replace: "{{ revision }}" }
+      tags:
+        - "{{ kubadm_init }}"
+
+- hosts: "{{ master3_ip }}"
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Modified "{{ keepalive_conf }}" configuration
+      replace:
+        path: "{{ keepalive_conf }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "MASTER", replace: "{{ master3_role }}" }
+        - { regexp: "iface", replace: "{{ iface }}" }
+        - { regexp: "LEVEL", replace: "{{ master3_level }}" }
+        - { regexp: "my_ip", replace: "{{ master3_ip }}" }
+        - { regexp: "HOST2_IP", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST3_IP", replace: "{{ master1_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+      tags:
+        - keepalived.conf
+
+    - name: Modified "{{ etcd_enviorn }}/etcd.env" configuration
+      replace:
+        path: "{{ etcd_enviorn }}/etcd.env"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master3_ip }}" }
+      tags:
+        - etcd.env
+
+    - name: Modified "{{ etcd_daemon }}/etcd.service" configuration
+      replace:
+        path: "{{ etcd_daemon }}/etcd.service"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master3_ip }}" }
+        - { regexp: "each_ip1", replace: "{{ master1_ip }}" }
+        - { regexp: "each_ip2", replace: "{{ master2_ip }}" }
+        - { regexp: "master2", replace: "{{ master1_host }}" }
+        - { regexp: "master3", replace: "{{ master2_host }}" }
+      tags:
+        - etcd.service
+
+    - name: Modified "{{ kubadm_init }}" configuration
+      replace:
+        path: "{{ kubadm_init }}"
+        replace: "{{ item.replace }}"
+        regexp: "{{ item.regexp }}"
+      with_items:
+        - { regexp: "my_hostname", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "my_ip", replace: "{{ master3_ip }}" }
+        - { regexp: "HOSTNAME1", replace: "{{ ansible_fqdn }}" }
+        - { regexp: "HOSTNAME2", replace: "{{ master1_host }}" }
+        - { regexp: "HOSTNAME3", replace: "{{ master2_host }}" }
+        - { regexp: "HOST_IP1", replace: "{{ master1_ip }}" }
+        - { regexp: "HOST_IP2", replace: "{{ master2_ip }}" }
+        - { regexp: "HOST_IP3", replace: "{{ master3_ip }}" }
+        - { regexp: "VIP", replace: "{{ vip }}" }
+        - { regexp: "revision", replace: "{{ revision }}" }
+      tags:
+        - "{{ kubadm_init }}"
+
+- hosts: all
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Create "{{ etcd_cert }}" in Master2 Master3
+      file:
+        path: "{{ etcd_cert }}"
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+
+    - name: List all etcd certificate
+      shell: ls -a './cache' | grep -v '^\.$' | grep -v '^\..$' | grep -v '.initial'
+      register: files_to_copy
+      delegate_to: "localhost"
+
+    - name: Print variable
+      debug:
+        msg: "{{ files_to_copy.stdout_lines }}"
+
+    - name: Synchronize etcd certificate
+      copy:
+        src: "./cache/{{ item }}"
+        dest: "{{ etcd_cert }}"
+        owner: root
+        group: root
+        mode: 0755
+      with_items:
+        - "{{ files_to_copy.stdout_lines }}"
+
+    - name: Start service list "{{ sevice_daemon }}"
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+      with_items:
+        - "{{ sevice_daemon }}"
+      when: ansible_distribution | lower == "centos" and ansible_distribution_version >= 7
+
+- hosts: "{{ master1_ip }}"
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Create kubeadm cert
+      shell: |
+        if [ ! -d '/etc/kubernetes/pki/etcd/' ]; then
+            mkdir -p /etc/kubernetes/pki/etcd/
+        fi
+        yes | cp -rf /etc/etcd/pki/ca.pem /etc/kubernetes/pki/etcd/ > /dev/null 2>&1
+        yes | cp -rf /etc/etcd/pki/client.pem /etc/kubernetes/pki/apiserver-etcd-client.pem > /dev/null 2>&1
+        yes | cp -rf /etc/etcd/pki/client-key.pem /etc/kubernetes/pki/apiserver-etcd-client-key.pem > /dev/null 2>&1
+        tree /etc/kubernetes/pki/
+      args:
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Print kubeadm cert result
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Initial the kubeadm to set up kubernates
+      shell: bash kubeadminsetup.sh -f {{ kubadm_init }}
+      args:
+        chdir: "{{ deploy_dir.stdout }}/lib"
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Print kubeadm process result
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Delete file of within cache directory
+      shell: |
+        if [ "$(ls -a './cache' | grep -v '^\.$' | grep -v '^\..$' | grep -v '.initial')" != "" ]; then
+            rm -rf ./cache/*
+        fi
+      delegate_to: "localhost"
+
+    - name: Sync the "{{ kube_cert }}" directory to localhost
+      synchronize:
+        mode: pull
+        src: "{{ kube_cert }}"
+        dest: "./cache"
+        rsync_opts:
+          - "--exclude=.initial"
+          - "--delete-before"
+          - "--no-motd"
+      delegate_to: "localhost"
+
+- hosts: all
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Synchronize "{{ kube_cert }}" certificate
+      synchronize:
+        mode: push
+        src: "./cache/pki"
+        dest: "/etc/kubernetes/"
+
+    - name: Initial the master2 master3 kubeadm to set up kubernates
+      shell: bash kubeadminsetup.sh -f {{ kubadm_init }} && sleep 1m
+      args:
+        chdir: "{{ deploy_dir.stdout }}/lib"
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Print kubeadm process result
+      debug:
+        msg: "{{ shell_result.stdout }}"
+   
+    - name: Create a tar.gz archive of reports, rooted at "{{ deploy_dir.stdout }}/reports"
+      archive:
+        path:
+         - "{{ deploy_dir.stdout }}/reports"
+        dest: "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz"
+        format: gz
+
+    - name: Sync the "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz" directory to localhost
+      synchronize:
+        mode: pull
+        src: "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz"
+        dest: "./reports"
+        rsync_opts:
+          - "--exclude=.initial"
+          - "--delete-before"
+          - "--no-motd"
+      delegate_to: "localhost"
+ 
+- hosts: "{{ master1_ip }}"
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Print variable
+      debug:
+        msg: "{{ ansible_fqdn }}"
+
+    - name: Set up the kubenetes cluster plgin
+      shell: |
+        kubectl apply -f ./network
+        kubectl apply -f ./dashboard
+        kubectl apply -f ./ingress_controller
+      args:
+        chdir: "{{ remote_plugin }}/plugin"
+        executable: /bin/bash
+      register: execution_result
+
+    - name: Print apply plugin result
+      debug:
+        msg: "{{ execution_result.stdout }}"
+ 
+    - name: Output the coredns.yaml
+      shell: |
+        if [ -f "{{ remote_plugin }}/plugin/coredns/coredns.yaml" ]; then
+             rm -rf {{ remote_plugin }}/plugin/coredns/coredns.yaml
+        fi
+        kubectl get deploy coredns -n kube-system -o yaml \
+                | tee {{ remote_plugin }}/plugin/coredns/coredns.yaml 
+        cat {{ remote_plugin }}/plugin/coredns/coredns.yaml
+      args:
+        executable: /bin/bash
+      register: execution_result
+
+    - name: Print "{{ remote_plugin }}/plugin/coredns/coredns.yaml"
+      debug:
+        msg: "{{ execution_result.stdout }}"
+
+    - name: Update the coredns be HA
+      blockinfile:
+        path: "{{ remote_plugin }}/plugin/coredns/coredns.yaml"
+        marker: "# {mark} kubernates coredns yaml"
+        insertbefore: 'containers'
+        block: |7
+                     affinity:
+                       podAntiAffinity:
+                         preferredDuringSchedulingIgnoredDuringExecution:
+                         - podAffinityTerm:
+                             labelSelector:
+                               matchExpressions:
+                               - key: k8s-app
+                                 operator: In
+                                 values:
+                                 - kube-dns
+                             topologyKey: kubernetes.io/hostname
+                           weight: 100
+
+    - name: Change the replicas to 3
+      replace:
+        path: "{{ remote_plugin }}/plugin/coredns/coredns.yaml"
+        replace: "replicas: 3"
+        regexp: "replicas: 2"      
+
+    - name: Replace the coredns
+      shell: kubectl replace -f {{ remote_plugin }}/plugin/coredns/coredns.yaml
+      args:
+        executable: /bin/bash
+      register: execution_result
+
+    - name: Print replace the coredns result
+      debug:
+        msg: "{{ execution_result.stdout }}" 

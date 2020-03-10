@@ -1,0 +1,133 @@
+#!/usr/bin/env ansible-playbook
+
+- hosts: all
+  gather_facts: True
+  vars_files:
+    - ./variables/common.yaml
+  tasks:
+    - name: Test connectivity
+      ping:
+      register: result
+
+    - name: Print result
+      debug:
+        msg: "{{ result['ping'] }}"
+
+    - name: Deploy public key to nodes
+      shell: | 
+        if [ $(ls -al ~/.ssh/ | grep -ci 'id_rsa') -ne 0 ]; then
+            echo '~/.ssh/ not empty.'
+            rm -rf ~/.ssh/*
+        fi
+        yes | cp -rf ./ssh/id_rsa ~/.ssh/
+        chmod 700 ~/.ssh/id_rsa
+        sshpass -p "{{ ansible_ssh_pass }}" \
+        ssh-copy-id -i {{ ssh_pub_key }} \
+        root@{{ item }} -o StrictHostKeychecking=no
+      args:
+        executable: /bin/bash
+      delegate_to: "localhost"
+      with_items:
+        - "{{ master2_ip }}"
+        - "{{ master3_ip }}"
+        - "{{ master1_ip }}"
+      register: pub_key_result
+
+    - name: Print public key result
+      debug:
+        msg: "{{ pub_key_result.results }}"
+
+    - name: Defined the deploy directory
+      shell: echo /tmp/deploy
+      register: deploy_dir
+
+    - name: Showing the execute path
+      debug:
+        msg: "{{ deploy_dir.stdout }}"
+
+    - name: Delete before directory
+      file:
+        path: "{{ deploy_dir.stdout }}"
+        state: absent
+
+    - name: Create deploy directory
+      file:
+        path: "{{ deploy_dir.stdout }}"
+        recurse: yes
+        state: directory
+        mode: 0755
+        group: root
+        owner: root
+
+    - name: Delete file of within reports directory
+      shell: |
+        if [ "$(ls -a './reports' | grep -v '^\.$' \
+                | grep -v '^\..$' \
+                | grep -v '.initial')" != "" ]; then
+            rm -rf ./reports/*
+        fi
+      delegate_to: "localhost"
+
+    - name: Copy script folder to remote host
+      copy: src={{ item.src }} dest={{ item.dest }}
+      with_items:
+        - { src: './README.md', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './tools', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './prerequisite.sh', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './reports', dest: "{{ deploy_dir.stdout }}" }
+        - { src: './lib', dest: "{{ deploy_dir.stdout }}" }
+        
+    - name: Delete kubernates cluster
+      shell: |
+        kubectl drain {{ ansible_fqdn | lower }} \
+                --delete-local-data \
+                --force \
+                --ignore-daemonsets > /dev/null 2>&1 || true
+        kubectl delete node {{ ansible_fqdn | lower }} > /dev/null 2>&1 || true 
+      args:
+        executable: /bin/bash
+      register: shell_result
+
+    - name: Showing the delete nodes process
+      debug:
+        msg: "{{ shell_result.stdout }}"
+        
+    - name: Reset the kubernetes cluster
+      shell: |
+        bash kubereset.sh
+      args:
+        executable: /bin/bash
+        chdir: "{{ deploy_dir.stdout }}/lib"
+      register: shell_result
+    
+    - name: Showing delete kubernetes information
+      debug:
+        msg: "{{ shell_result.stdout }}"
+
+    - name: Restart the etcd docker service
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+      with_items:
+        - "{{ sevice_daemon[0] }}"
+        - "{{ sevice_daemon[4] }}"
+
+    - name: Create a tar.gz archive of reports, rooted at "{{ deploy_dir.stdout }}/reports"
+      archive:
+        path:
+         - "{{ deploy_dir.stdout }}/reports"
+        dest: "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz"
+        format: gz
+  
+    - name: Sync the "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz" directory to localhost
+      synchronize:
+        mode: pull
+        src: "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz"
+        dest: "./reports"
+        rsync_opts:
+          - "--exclude=.initial"
+          - "--delete-before"
+          - "--no-motd"
+      delegate_to: "localhost"

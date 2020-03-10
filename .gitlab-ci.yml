@@ -1,0 +1,64 @@
+.normal: &normal
+  before_script:
+    - chmod a+x *.sh *.py || true
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" "$CI_REGISTRY" --password-stdin
+  after_script:
+    - docker logout
+  tags:
+    - IPT-K8S-NODE2
+  
+.tool: &tool
+  before_script:
+    - apk add --update curl git && rm -rf /var/cache/apk/*
+    - git clone $TOOLS_PROJECT
+  tags:
+    - TA-SLAVE-RUNNER
+
+stages:
+  - lintcheck
+  - checkyaml
+  - cleanup
+
+shellcheck:
+  <<: *normal
+  stage: lintcheck
+  image: registry.ipt-gitlab:8081/sit-develop-tool/shellcheck:$SHCHECK_VER
+  before_script:
+    - echo "======>>>>>>>> shell script code styles check start."
+  script:
+    - find . -iname "*.sh" | xargs  shellcheck -s bash --color=always || true
+  after_script:
+    - echo "======>>>>>>>> shell script code styles check end."
+  tags:
+    - IPT-K8S-NODE2
+  when: always
+
+yamlsyntax:
+  <<: *normal
+  stage: checkyaml
+  image: registry.ipt-gitlab:8081/sit-develop-tool/tool-ansible:$ANSIBLE_VER
+  script:
+  - |
+     ansible-playbook -i ${PWD}/inventory --syntax-check *.yaml
+  tags:
+    - IPT-K8S-NODE2
+  only:
+    - branches
+  except:
+    - master
+  allow_failure: true
+  artifacts:
+    name: ${CI_PROJECT_NAME}-Reports
+    expire_in: 30d
+    when: on_success
+    paths:
+      - ${PWD}/*.*.*.*-Report
+
+cleanEnv:
+  <<: *tool
+  stage: cleanup
+  script:
+    - sh tool-gitlab-deployment/pipeline_clean.sh
+  tags:
+    - IPT-K8S-NODE2
+  when: always

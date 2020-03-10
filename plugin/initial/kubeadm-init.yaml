@@ -1,0 +1,49 @@
+apiVersion: kubeadm.k8s.io/v1beta1
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: my_ip
+  bindPort: 6443
+nodeRegistration:
+  name: my_hostname
+
+---
+
+apiVersion: kubeadm.k8s.io/v1beta1
+kind: ClusterConfiguration
+kubernetesVersion: revision
+imageRepository: k8s.gcr.io
+
+apiServer:
+  certSANs:
+  - "HOSTNAME1"
+  - "HOSTNAME2"
+  - "HOSTNAME3"
+  - "HOST_IP1"
+  - "HOST_IP2"
+  - "HOST_IP3"
+  - "VIP"
+
+apiServerExtraArgs:
+  endpoint-reconciler-type: lease
+
+controlPlaneEndpoint: "VIP:8443"
+
+etcd:
+   external:
+     endpoints:
+     - https://HOST_IP1:2379
+     - https://HOST_IP2:2379
+     - https://HOST_IP3:2379
+     caFile: /etc/kubernetes/pki/etcd/ca.pem
+     certFile: /etc/kubernetes/pki/apiserver-etcd-client.pem
+     keyFile: /etc/kubernetes/pki/apiserver-etcd-client-key.pem
+
+networking:
+  dnsDomain: "cluster.local"
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+mode: "ipvs"
