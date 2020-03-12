@@ -1,13 +1,15 @@
 CloudNative-kubernetes-HA
 ===========================
 
+
 > kubernetes: [high-availability](https://www.kubeclusters.com/docs/How-to-Deploy-a-Highly-Available-kubernetes-Cluster-with-Kubeadm-on-CentOS7)
+
 
 ---
 
 ## Version
 
-`Rev: 1.0.0`
+`Rev: 1.0.2`
 
 ---
 
@@ -16,6 +18,10 @@ CloudNative-kubernetes-HA
   - `none`
 
 ---
+
+## Status
+
+[![pipeline status](http://ipt-gitlab.ies.inventec:8081/SIT-develop-tool/CloudNative-Kubernetes-HA/badges/master/pipeline.svg)](http://ipt-gitlab.ies.inventec:8081/SIT-develop-tool/CloudNative-Kubernetes-HA/commits/master)
 
 ## Description
 
@@ -26,7 +32,7 @@ CloudNative-kubernetes-HA
 
 ## prerequisites
 
-  - The control machine which could command remote nodes must be have `ansible`.
+  - The control machine which could command remote nodes the must be have `ansible`.
   - Cluster quantity must be `3`.
   - Only support operation system `centos 7.x`.
   - Edit `./variables/common.yaml` following block
@@ -54,6 +60,18 @@ CloudNative-kubernetes-HA
 ---
 
 ## Trouble shooting
+
+   - Detected the VIP
+
+     ```bash
+     $ nc -v $vip $port
+     ```
+
+   - Verify the etcd connection
+
+     ```bash
+     $ etcdctl --ca-file=/etc/etcd/pki/ca.pem --cert-file=/etc/etcd/pki/server.pem --key-file=/etc/etcd/pki/server-key.pem --endpoints=https://$node_ip:2379 cluster-health
+     ```
 
    - Detected the ansible yaml syntax
 
@@ -161,4 +179,4 @@ CloudNative-kubernetes-HA
 
 ##### Author: Jay.Chang
 
-##### Email: cqe5914678@gmail.com
+##### Email: chang.jay@inventec.com

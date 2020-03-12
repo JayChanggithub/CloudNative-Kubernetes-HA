@@ -93,10 +93,9 @@ vm.swappiness = 0
 net.ipv4.ip_nonlocal_bind = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.tcp_syncookies = 1
-net.ipv4.ip_local_port_range = 1  65535
-net.ipv4.tcp_tw_reuse = 1
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv4.ip_local_port_range = 1  65535
 EOF
     sysctl --system
 

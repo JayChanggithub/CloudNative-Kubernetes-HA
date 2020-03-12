@@ -14,7 +14,7 @@
         msg: "{{ result['ping'] }}"
 
     - name: Deploy public key to nodes
-      shell: | 
+      shell: |
         if [ $(ls -al ~/.ssh/ | grep -ci 'id_rsa') -ne 0 ]; then
             echo '~/.ssh/ not empty.'
             rm -rf ~/.ssh/*
@@ -58,7 +58,7 @@
         mode: 0755
         group: root
         owner: root
-  
+
     - name: Delete file of within reports directory
       shell: |
         if [ "$(ls -a './reports' | grep -v '^\.$' \
@@ -339,8 +339,8 @@
         - { regexp: "my_ip", replace: "{{ master1_ip }}" }
         - { regexp: "each_ip1", replace: "{{ master2_ip }}" }
         - { regexp: "each_ip2", replace: "{{ master3_ip }}" }
-        - { regexp: "master2", replace: "{{ master2_host }}" }
-        - { regexp: "master3", replace: "{{ master3_host }}" }
+        - { regexp: "__master2__", replace: "{{ master2_host }}" }
+        - { regexp: "__master3__", replace: "{{ master3_host }}" }
       tags:
         - etcd.service
 
@@ -410,8 +410,8 @@
         - { regexp: "my_ip", replace: "{{ master2_ip }}" }
         - { regexp: "each_ip1", replace: "{{ master1_ip }}" }
         - { regexp: "each_ip2", replace: "{{ master3_ip }}" }
-        - { regexp: "master2", replace: "{{ master1_host }}" }
-        - { regexp: "master3", replace: "{{ master3_host }}" }
+        - { regexp: "__master2__", replace: "{{ master1_host }}" }
+        - { regexp: "__master3__", replace: "{{ master3_host }}" }
       tags:
         - etcd.service
 
@@ -481,8 +481,8 @@
         - { regexp: "my_ip", replace: "{{ master3_ip }}" }
         - { regexp: "each_ip1", replace: "{{ master1_ip }}" }
         - { regexp: "each_ip2", replace: "{{ master2_ip }}" }
-        - { regexp: "master2", replace: "{{ master1_host }}" }
-        - { regexp: "master3", replace: "{{ master2_host }}" }
+        - { regexp: "__master2__", replace: "{{ master1_host }}" }
+        - { regexp: "__master3__", replace: "{{ master2_host }}" }
       tags:
         - etcd.service
 
@@ -632,7 +632,7 @@
     - name: Print kubeadm process result
       debug:
         msg: "{{ shell_result.stdout }}"
-   
+
     - name: Create a tar.gz archive of reports, rooted at "{{ deploy_dir.stdout }}/reports"
       archive:
         path:
@@ -650,7 +650,7 @@
           - "--delete-before"
           - "--no-motd"
       delegate_to: "localhost"
- 
+
 - hosts: "{{ master1_ip }}"
   gather_facts: True
   vars_files:
@@ -673,14 +673,14 @@
     - name: Print apply plugin result
       debug:
         msg: "{{ execution_result.stdout }}"
- 
+
     - name: Output the coredns.yaml
       shell: |
         if [ -f "{{ remote_plugin }}/plugin/coredns/coredns.yaml" ]; then
              rm -rf {{ remote_plugin }}/plugin/coredns/coredns.yaml
         fi
         kubectl get deploy coredns -n kube-system -o yaml \
-                | tee {{ remote_plugin }}/plugin/coredns/coredns.yaml 
+                | tee {{ remote_plugin }}/plugin/coredns/coredns.yaml
         cat {{ remote_plugin }}/plugin/coredns/coredns.yaml
       args:
         executable: /bin/bash
@@ -713,7 +713,7 @@
       replace:
         path: "{{ remote_plugin }}/plugin/coredns/coredns.yaml"
         replace: "replicas: 3"
-        regexp: "replicas: 2"      
+        regexp: "replicas: 2"
 
     - name: Replace the coredns
       shell: kubectl replace -f {{ remote_plugin }}/plugin/coredns/coredns.yaml
@@ -723,4 +723,4 @@
 
     - name: Print replace the coredns result
       debug:
-        msg: "{{ execution_result.stdout }}" 
+        msg: "{{ execution_result.stdout }}"

@@ -1,10 +1,10 @@
 [MASTER]
-192.168.33.11
-192.168.33.33
-192.168.33.13
+192.168.33.101
+192.168.33.102
+192.168.33.103
 
 
 [MASTER:vars]
-ansible_ssh_pass='vagrant'
+ansible_ssh_pass='sit22@@ipt'
 ansible_ssh_user='root'
 iansible_ssh_port='22'

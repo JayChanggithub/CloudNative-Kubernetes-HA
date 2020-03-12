@@ -1,12 +1,12 @@
 # define masters hostname
-master1_host: 'ansible-test'
-master2_host: 'ta-fiona'
-master3_host: 'ta-kailen'
+master1_host: 'k8s-master1'
+master2_host: 'k8s-master2'
+master3_host: 'k8s-master3'
 
 # define ip address
-master1_ip: '192.168.33.11'
-master2_ip: '192.168.33.33'
-master3_ip: '192.168.33.13'
+master1_ip: '192.168.33.101'
+master2_ip: '192.168.33.102'
+master3_ip: '192.168.33.103'
 vip: '192.168.33.105'
 
 # interface
