@@ -22,7 +22,12 @@ function k8smasternode
         mkdir -p $HOME/.kube
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $(id -u):$(id -g) $HOME/.kube/config
-
+        
+        if [ $(cat /root/.bash_profile | grep -ci '(kubectl completion bash)') -ne 1 ]; then
+            echo "source <(kubectl completion bash)" >> ~/.bash_profile
+            source ~/.bash_profile 
+        fi
+  
         # could invoke the pods in master node
         kubectl taint nodes --all node-role.kubernetes.io/master-
         systemctl daemon-reload

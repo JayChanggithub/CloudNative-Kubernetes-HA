@@ -189,13 +189,15 @@ spec:
         args:
         - --ip-masq
         - --kube-subnet-mgr
+        - --iface=__iface__
+        # the test env best fit on 50m, 50Mi
         resources:
           requests:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
           limits:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
         securityContext:
           privileged: false
           capabilities:
@@ -283,13 +285,15 @@ spec:
         args:
         - --ip-masq
         - --kube-subnet-mgr
+        - --iface=__iface__
+        # the test env best fit on 50m, 50Mi
         resources:
           requests:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
           limits:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
         securityContext:
           privileged: false
           capabilities:
@@ -377,13 +381,15 @@ spec:
         args:
         - --ip-masq
         - --kube-subnet-mgr
+        - --iface=__iface__
+        # the test env best fit on 50m, 50Mi
         resources:
           requests:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
           limits:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
         securityContext:
           privileged: false
           capabilities:
@@ -471,13 +477,15 @@ spec:
         args:
         - --ip-masq
         - --kube-subnet-mgr
+        - --iface=__iface__
+        # the test env best fit on 50m, 50Mi
         resources:
           requests:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
           limits:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
         securityContext:
           privileged: false
           capabilities:
@@ -565,13 +573,15 @@ spec:
         args:
         - --ip-masq
         - --kube-subnet-mgr
+        - --iface=__iface__
+        # the test env best fit on 50m, 50Mi
         resources:
           requests:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
           limits:
-            cpu: "50m"
-            memory: "50Mi"
+            cpu: "250m"
+            memory: "250Mi"
         securityContext:
           privileged: false
           capabilities:

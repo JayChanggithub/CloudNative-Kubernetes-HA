@@ -26,7 +26,7 @@ metadata:
   labels:
     k8s-app: kubernetes-dashboard
   name: kubernetes-dashboard
-  namespace: kube-system
+  namespace: kube-ops
 
 ---
 
@@ -36,7 +36,7 @@ kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: kubernetes-dashboard-minimal
-  namespace: kube-system
+  namespace: kube-ops
 rules:
   # Allow Dashboard to create 'kubernetes-dashboard-key-holder' secret.
 - apiGroups: [""]
@@ -71,7 +71,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kubernetes-dashboard-minimal
-  namespace: kube-system
+  namespace: kube-ops
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -79,7 +79,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: kubernetes-dashboard
-  namespace: kube-system
+  namespace: kube-ops
 
 ---
 # ------------------- Dashboard Deployment ------------------- #
@@ -90,7 +90,7 @@ metadata:
   labels:
     k8s-app: kubernetes-dashboard
   name: kubernetes-dashboard
-  namespace: kube-system
+  namespace: kube-ops
 spec:
   replicas: 3
   revisionHistoryLimit: 10
@@ -157,7 +157,10 @@ metadata:
   labels:
     k8s-app: kubernetes-dashboard
   name: kubernetes-dashboard
-  namespace: kube-system
+  annotations:
+    # metallb.universe.tf/address-pool: production
+    kubernetes.io/ingress.class: "nginx"
+  namespace: kube-ops
 spec:
   ports:
   - port: 8000
@@ -171,8 +174,8 @@ spec:
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
-  name: dashboard-kibana-ingress
-  namespace: kube-system
+  name: k8s-dashboard-ingress
+  namespace: kube-ops
 spec:
   rules:
   - host: dashboard.cloudnative.ies.inventec

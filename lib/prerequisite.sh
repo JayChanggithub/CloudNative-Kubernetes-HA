@@ -1,4 +1,4 @@
-#!/bin/bash
+#i!/bin/bash
 
 # define globals variables
 NC1='\033[0m'
@@ -8,8 +8,8 @@ YELLOW='\033[0;33m'
 __file__=$(basename $0)
 log_name=$(basename $__file__ .sh).log
 CWD=$PWD
-logdir=$CWD/reports
-revision=$(grep 'Rev:' README.md | grep -Po '(\d+\.){2}\d+')
+logdir=$(dirname $CWD)/reports
+revision=$(grep 'Rev:' "$(dirname $CWD)/README.md" | grep -Po '(\d+\.){2}\d+')
 
 function Updatehost
 {
@@ -89,13 +89,28 @@ function precondition
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
-vm.swappiness = 0
+vm.swappiness = 10
 net.ipv4.ip_nonlocal_bind = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.tcp_syncookies = 1
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv4.ip_local_port_range = 1  65535
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.conf.all.arp_ignore = 1
+net.ipv4.conf.all.arp_announce = 2
+kernel.pid_max = 1000000
+net.ipv4.tcp_max_syn_backlog=1024
+net.core.somaxconn = 10240
+net.ipv4.tcp_fin_timeout = 30
+net.netfilter.nf_conntrack_tcp_be_liberal = 1
+net.netfilter.nf_conntrack_tcp_loose = 1 
+net.netfilter.nf_conntrack_max = 3200000
+net.netfilter.nf_conntrack_buckets = 1600512
+net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.ipv4.tcp_timestamps = 1
+kernel.msgmax = 65536
+kernel.msgmnb = 163840
 EOF
     sysctl --system
 
@@ -117,7 +132,6 @@ EOF
         chmod +x /etc/sysconfig/modules/ipvs.modules
         bash /etc/sysconfig/modules/ipvs.modules
     fi
-
 }
 
 function setrepository
@@ -151,7 +165,11 @@ function checkpkg
                     etcdctl
                     cfssl
                     haproxy
-                    keepalived)
+                    keepalived
+                    tree
+                    ntpdate
+                    bash-completion)
+
     # setting the kubernates repository
     tee /etc/yum.repos.d/kubernetes.repo << EOF
 [kubernetes]
@@ -165,6 +183,11 @@ EOF
     yum makecache
     yum update -y
 
+    # remove before kube packages that version not match
+    if [ "$(command -v kubeadm)" != "" ] &&
+       [ "$(kubelet --version | grep -Eo '([0-9]+\.){2}[0-9]+')" != "$kube_version" ]; then
+        yum remove -y kubectl kubelet kubeadm
+    fi
     for p in "${packages[@]}"
     do
         if [ $(rpm -qa | egrep -ci "$p") -eq 0 ] ||
@@ -185,30 +208,33 @@ EOF
                         yum --enablerepo=epel install $p -y
                     fi
                     ;;
-                "nc"|"ipvsadm"|"bridge-utils"|"haproxy"|"keepalived")
+                "nc"|"ipvsadm"|"bridge-utils"|"haproxy"|"keepalived"|"ntpdate"|"bash-completion")
                     yum install -y $p
                     if [ $? -ne 0 ]; then
                         yum --enablerepo=epel install $p -y
                     fi
                     ;;
                 "etcdctl")
-                    cd $CWD/tools/
+                    cd $(dirname $CWD)/tools/
                     tar -xzvf $p --strip-components=1 -C /usr/local/bin/
                     cd $CWD
                     ;;
                 "cfssl")
-                    cd $CWD/tools/
+                    cd $(dirname $CWD)/tools/
                     chmod +x cfssl_linux-amd64 cfssljson_linux-amd64
                     mv cfssl_linux-amd64 /usr/local/bin/cfssl
                     mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
                     cd $CWD
+                    ;;
+                "tree")
+                    yum install -y $p || \
+                    yum --enablerepo=epel install $p -y
                     ;;
             esac
         else
             printf "%-40s [${YELLOW} %s ${NC1}]\n" \
                    " * package: $p " \
                    " exist "
-
             continue
         fi
     done
@@ -217,7 +243,7 @@ EOF
     tee /etc/docker/daemon.json << EOF
 {
     "bip": "172.27.0.1/16",
-    "dns": ["8.8.8.8","168.95.1.1"],
+    "dns": ["10.99.2.59","10.99.6.60"],
     "insecure-registries":["$rigistry_server"],
     "live-restore": true,
     "exec-opts": ["native.cgroupdriver=systemd"],
@@ -263,6 +289,27 @@ function modifyConf
     systemctl enable kubelet
 }
 
+function syncntp
+{
+    local ntp_server='ntp.api.bz'
+
+    # show information
+    echo -en "${YELLOW}"
+    more << EOF
+Show NTP synchronized information
+`printf '%0.s-' {1..100}; echo`
+
+Before time: $(date '+[%F %T]')
+Synchronized info: $(ntpdate -u $ntp_server)
+IP Address: $(ip route get 1 | awk '{print $NF;exit}')
+Hostname: $(hostname)
+After time: $(date '+[%F %T]')
+
+`printf '%0.s-' {1..100}; echo`
+EOF
+    echo -en "${NC1}"
+}
+
 function main
 {
     # update host configuration
@@ -282,6 +329,9 @@ function main
 
     # modified the kubernates configuration
     modifyConf
+
+    # update ntp sync
+    syncntp
 }
 
 main | tee ${logdir}/${log_name}

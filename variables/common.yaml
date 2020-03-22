@@ -15,6 +15,15 @@ iface: 'eth1'
 # kubernetes version
 revision: 'v1.15.1'
 
+# gitlab token
+gitlab_token: 'Bs-VGxAU-EDXpVXRiVww'
+
+# kubernetes namespace list
+kube_namespace:
+    - 'kube-ops'
+    - 'kube-monitor'
+    - 'kube-system'
+
 ssh_pub_key: './ssh/id_rsa.pub'
 src_cert: './cert'
 src_syslog_conf: './conf/rsyslog.conf'

@@ -25,6 +25,7 @@ apiServer:
 
 apiServerExtraArgs:
   endpoint-reconciler-type: lease
+  feature-gates: SupportIPVSProxyMode=true
 
 controlPlaneEndpoint: "VIP:8443"
 
@@ -46,4 +47,8 @@ networking:
 ---
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
 kind: KubeProxyConfiguration
-mode: "ipvs"
+mode: ""
+ipvs:
+  strictARP: true
+iptables:
+  masqueradeAll: true

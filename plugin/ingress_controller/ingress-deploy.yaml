@@ -213,6 +213,7 @@ spec:
       # wait up to five minutes for the drain of connections
       terminationGracePeriodSeconds: 300
       hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -238,7 +239,7 @@ spec:
             - --configmap=$(POD_NAMESPACE)/nginx-configuration
             - --tcp-services-configmap=$(POD_NAMESPACE)/tcp-services
             - --udp-services-configmap=$(POD_NAMESPACE)/udp-services
-            - --publish-service=$(POD_NAMESPACE)/ingress-nginx
+            # - --publish-service=$(POD_NAMESPACE)/ingress-nginx
             - --annotations-prefix=nginx.ingress.kubernetes.io
           securityContext:
             allowPrivilegeEscalation: true
@@ -291,6 +292,7 @@ spec:
                   - /wait-shutdown
 
 ---
+# this is fit on production environment
 apiVersion: v1
 kind: LimitRange
 metadata:
@@ -300,8 +302,36 @@ metadata:
     app.kubernetes.io/name: ingress-nginx
     app.kubernetes.io/part-of: ingress-nginx
 spec:
+  # only fit on test
+  # limits:
+  # - min:
+  #    memory: 90Mi
+  #    cpu: 100m
+  #  type: Container
   limits:
-  - min:
-      memory: 90Mi
-      cpu: 100m
+  - max:
+      cpu: "10"
+      memory: "20Gi"
+    min:
+      cpu: "500m"
+      memory: "500Mi"
+    default:
+      cpu: "4"
+      memory: "4Gi"
+    defaultRequest:
+      cpu: "1"
+      memory: "1Gi"
+    maxLimitRequestRatio:
+      cpu: 4
+      memory: 4
     type: Container
+  - max:
+      cpu: "10"
+      memory: "20Gi"
+    min:
+      cpu: "500m"
+      memory: "500Mi"
+    maxLimitRequestRatio:
+      cpu: 4
+      memory: 4
+    type: Pod

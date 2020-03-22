@@ -73,15 +73,14 @@
       with_items:
         - { src: './README.md', dest: "{{ deploy_dir.stdout }}" }
         - { src: './tools', dest: "{{ deploy_dir.stdout }}" }
-        - { src: './prerequisite.sh', dest: "{{ deploy_dir.stdout }}" }
         - { src: './reports', dest: "{{ deploy_dir.stdout }}" }
         - { src: './lib', dest: "{{ deploy_dir.stdout }}" }
 
     - name: Installed the etcd agent
       shell: |
         tar -xzvf ./tools/etcd-v3.3.9-linux-amd64.tar.gz \
-           --strip-components=1 \
-           -C /usr/local/bin/
+            --strip-components=1 \
+            -C /usr/local/bin/
         chmod +x /usr/local/bin/etcd*
         chown -R root:root /usr/local/bin/etcd*
       args:
@@ -95,8 +94,8 @@
 
     - name: Execute remote host shell script
       shell:
-        cmd: bash "{{ deploy_dir.stdout }}"/prerequisite.sh
-        chdir: "{{ deploy_dir.stdout }}"
+        cmd: ls -al && bash prerequisite.sh
+        chdir: "{{ deploy_dir.stdout }}/lib"
       args:
         executable: /bin/bash
       register: shell_result
@@ -362,6 +361,14 @@
         - { regexp: "revision", replace: "{{ revision }}" }
       tags:
         - "{{ kubadm_init }}"
+
+    - name: Modified "{{ remote_plugin }}/plugin/network" configuration
+      replace:
+        path: "{{ remote_plugin }}/plugin/network/kube-flannel.yaml"
+        replace: "{{ iface }}"
+        regexp: __iface__
+      tags:
+        - "{{ remote_plugin }}/plugin/network/kube-flannel.yaml"
 
 - hosts: "{{ master2_ip }}"
   gather_facts: True
@@ -660,21 +667,24 @@
       debug:
         msg: "{{ ansible_fqdn }}"
 
-    - name: Set up the kubenetes cluster plgin
+    - name: Set up the kubenetes cluster plugin
       shell: |
+        kubectl apply -f ./namespace
         kubectl apply -f ./network
         kubectl apply -f ./dashboard
         kubectl apply -f ./ingress_controller
+        kubectl create secret docker-registry gitlab-registry \
+                --docker-server=registry.ipt-gitlab:8081 \
+                --docker-username=iec070781 \
+                --docker-password={{ gitlab_token }} \
+                -n {{ item }}
       args:
         chdir: "{{ remote_plugin }}/plugin"
         executable: /bin/bash
+      with_items: "{{ kube_namespace }}"
       register: execution_result
 
-    - name: Print apply plugin result
-      debug:
-        msg: "{{ execution_result.stdout }}"
-
-    - name: Output the coredns.yaml
+    - name: Output the coredns.yaml and show gitlab registry secret
       shell: |
         if [ -f "{{ remote_plugin }}/plugin/coredns/coredns.yaml" ]; then
              rm -rf {{ remote_plugin }}/plugin/coredns/coredns.yaml
@@ -682,6 +692,7 @@
         kubectl get deploy coredns -n kube-system -o yaml \
                 | tee {{ remote_plugin }}/plugin/coredns/coredns.yaml
         cat {{ remote_plugin }}/plugin/coredns/coredns.yaml
+        kubectl get secret -A | grep 'gitlab-registry'
       args:
         executable: /bin/bash
       register: execution_result
@@ -709,10 +720,10 @@
                              topologyKey: kubernetes.io/hostname
                            weight: 100
 
-    - name: Change the replicas to 3
+    - name: Change the replicas to 5
       replace:
         path: "{{ remote_plugin }}/plugin/coredns/coredns.yaml"
-        replace: "replicas: 3"
+        replace: "replicas: 5"
         regexp: "replicas: 2"
 
     - name: Replace the coredns

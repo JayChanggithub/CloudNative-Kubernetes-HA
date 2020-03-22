@@ -57,11 +57,30 @@ function reset
     systemctl daemon-reload
     systemctl restart docker
 
-   if [ $? -eq 0 ]; then
-       printf "%s\t%30s${YELLOW} %s ${NC1}]\n" \
-              " Kubernetes service clean done,   " "[" "okay." \
-              | sed -E s',^ ,,'g
-   fi
+    # clean up docker process cache
+    if [ $(docker ps -a -q -f "status=exited" | wc -l) -ne 0 ]; then
+        printf "%s\t%30s${YELLOW} %s ${NC1}]\n" \
+               " Starting clear 'Exited' containers...,   " "[" "okay." \
+               | sed -E s',^ ,,'g
+        docker rm $(docker ps -a -q -f "status=exited")
+    fi
+
+    # clean up the docker images cache
+    if [ $(docker images -f "dangling=true" -q | wc -l) -ne 0 ]; then
+        printf "%s\t%30s${YELLOW} %s ${NC1}]\n" \
+               " Starting clear 'Untagged/Dangling' images...,   " "[" "okay." \
+               | sed -E s',^ ,,'g
+        docker image rmi $(docker images -f "dangling=true" -q)
+    fi
+
+    if [ $? -eq 0 ]; then
+        printf "%s\t%30s${YELLOW} %s ${NC1}]\n" \
+               " Kubernetes service clean done,   " "[" "okay." \
+               | sed -E s',^ ,,'g
+        printf "%s\t%30s${YELLOW} %s ${NC1}]\n" \
+               " Clear docker cache done,   " "[" "okay." \
+               | sed -E s',^ ,,'g
+    fi
 }
 
 function main

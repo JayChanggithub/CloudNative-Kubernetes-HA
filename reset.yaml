@@ -14,7 +14,7 @@
         msg: "{{ result['ping'] }}"
 
     - name: Deploy public key to nodes
-      shell: | 
+      shell: |
         if [ $(ls -al ~/.ssh/ | grep -ci 'id_rsa') -ne 0 ]; then
             echo '~/.ssh/ not empty.'
             rm -rf ~/.ssh/*
@@ -73,17 +73,16 @@
       with_items:
         - { src: './README.md', dest: "{{ deploy_dir.stdout }}" }
         - { src: './tools', dest: "{{ deploy_dir.stdout }}" }
-        - { src: './prerequisite.sh', dest: "{{ deploy_dir.stdout }}" }
         - { src: './reports', dest: "{{ deploy_dir.stdout }}" }
         - { src: './lib', dest: "{{ deploy_dir.stdout }}" }
-        
+
     - name: Delete kubernates cluster
       shell: |
         kubectl drain {{ ansible_fqdn | lower }} \
                 --delete-local-data \
                 --force \
                 --ignore-daemonsets > /dev/null 2>&1 || true
-        kubectl delete node {{ ansible_fqdn | lower }} > /dev/null 2>&1 || true 
+        kubectl delete node {{ ansible_fqdn | lower }} > /dev/null 2>&1 || true
       args:
         executable: /bin/bash
       register: shell_result
@@ -91,7 +90,7 @@
     - name: Showing the delete nodes process
       debug:
         msg: "{{ shell_result.stdout }}"
-        
+
     - name: Reset the kubernetes cluster
       shell: |
         bash kubereset.sh
@@ -99,7 +98,7 @@
         executable: /bin/bash
         chdir: "{{ deploy_dir.stdout }}/lib"
       register: shell_result
-    
+
     - name: Showing delete kubernetes information
       debug:
         msg: "{{ shell_result.stdout }}"
@@ -120,7 +119,7 @@
          - "{{ deploy_dir.stdout }}/reports"
         dest: "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz"
         format: gz
-  
+
     - name: Sync the "{{ deploy_dir.stdout }}/{{ ansible_fqdn | lower }}-reports.tar.gz" directory to localhost
       synchronize:
         mode: pull
