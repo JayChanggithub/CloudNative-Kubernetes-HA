@@ -27,7 +27,7 @@ function k8smasternode
             echo "source <(kubectl completion bash)" >> ~/.bash_profile
             source ~/.bash_profile 
         fi
-  
+
         # could invoke the pods in master node
         kubectl taint nodes --all node-role.kubernetes.io/master-
         systemctl daemon-reload

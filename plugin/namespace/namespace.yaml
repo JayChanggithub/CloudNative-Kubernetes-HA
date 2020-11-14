@@ -18,6 +18,16 @@ metadata:
 
 ---
 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: thanos
+  labels:
+    app.kubernetes.io/name: thanos
+    app.kubernetes.io/part-of: thanos
+
+---
+
 # only best fit on production
 apiVersion: v1
 kind: LimitRange
@@ -61,6 +71,42 @@ kind: LimitRange
 metadata:
   name: lr-ops
   namespace: kube-ops
+spec:
+  limits:
+  - max:
+      cpu: "10"
+      memory: "20Gi"
+    min:
+      cpu: "500m"
+      memory: "500Mi"
+    default:
+      cpu: "4"
+      memory: "4Gi"
+    defaultRequest:
+      cpu: "1"
+      memory: "1Gi"
+    maxLimitRequestRatio:
+      cpu: 4
+      memory: 4
+    type: Container
+  - max:
+      cpu: "10"
+      memory: "20Gi"
+    min:
+      cpu: "500m"
+      memory: "500Mi"
+    maxLimitRequestRatio:
+      cpu: 4
+      memory: 4
+    type: Pod
+
+---
+
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: lr-thanos
+  namespace: thanos
 spec:
   limits:
   - max:

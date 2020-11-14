@@ -23,6 +23,7 @@ kube_namespace:
     - 'kube-ops'
     - 'kube-monitor'
     - 'kube-system'
+    - 'thanos'
 
 ssh_pub_key: './ssh/id_rsa.pub'
 src_cert: './cert'

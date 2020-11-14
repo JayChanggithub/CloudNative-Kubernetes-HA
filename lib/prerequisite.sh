@@ -104,7 +104,7 @@ net.ipv4.tcp_max_syn_backlog=1024
 net.core.somaxconn = 10240
 net.ipv4.tcp_fin_timeout = 30
 net.netfilter.nf_conntrack_tcp_be_liberal = 1
-net.netfilter.nf_conntrack_tcp_loose = 1 
+net.netfilter.nf_conntrack_tcp_loose = 1
 net.netfilter.nf_conntrack_max = 3200000
 net.netfilter.nf_conntrack_buckets = 1600512
 net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
@@ -169,7 +169,6 @@ function checkpkg
                     tree
                     ntpdate
                     bash-completion)
-
     # setting the kubernates repository
     tee /etc/yum.repos.d/kubernetes.repo << EOF
 [kubernetes]
