@@ -76,6 +76,15 @@
         - { src: './reports', dest: "{{ deploy_dir.stdout }}" }
         - { src: './lib', dest: "{{ deploy_dir.stdout }}" }
 
+    - name: Installed stern to monitor pod logging
+      shell:
+          mv ./tools/stern_linux_amd64 /usr/local/bin/stern &&
+          chmod +x /usr/local/bin/*
+      args:
+        chdir: "{{ deploy_dir.stdout }}"
+        executable: /bin/bash
+      register: stern_shell
+
     - name: Installed the etcd agent
       shell: |
         tar -xzvf ./tools/etcd-v3.3.9-linux-amd64.tar.gz \
@@ -91,6 +100,22 @@
     - name: Showing the shell script process
       debug:
         msg: "{{ shell_result.stdout }}"
+
+    - name: Modified the registry server of prerequisite.sh
+      replace:
+        path: "{{ deploy_dir.stdout }}/lib/prerequisite.sh"
+        replace: "{{ docker_registry }}"
+        regexp: "__docker_registry__"
+      tags:
+        - "{{ docker_registry }}"
+
+    - name: Modified the kube version of prerequisite.sh
+      replace:
+        path: "{{ deploy_dir.stdout }}/lib/prerequisite.sh"
+        replace: "{{ revision  | regex_replace('^(\\w)', '') }}"
+        regexp: "__revision__"
+      tags:
+        - "{{ revision }}"
 
     - name: Execute remote host shell script
       shell:
@@ -735,3 +760,4 @@
     - name: Print replace the coredns result
       debug:
         msg: "{{ execution_result.stdout }}"
+

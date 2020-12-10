@@ -7,7 +7,7 @@ CloudNative-kubernetes-HA
 
 ## Version
 
-`Rev: 1.0.8`
+`Rev: 1.0.9`
 
 ---
 

@@ -83,6 +83,12 @@ function precondition
     sed -i 's/[^#]\(.*swap.*\)/# \1/g' /etc/fstab
     swapoff --all
 
+    ulimit -SHn  65536
+    modprobe br_netfilter
+
+    # import ip_conntrack modules
+    modprobe ip_conntrack
+
     # Some users on RHEL/CentOS 7 have reported issues with traffic
     # being routed incorrectly due to iptables being bypassed
     tee /etc/sysctl.d/k8s.conf << EOF
@@ -100,21 +106,39 @@ net.ipv4.tcp_tw_reuse = 1
 net.ipv4.conf.all.arp_ignore = 1
 net.ipv4.conf.all.arp_announce = 2
 kernel.pid_max = 1000000
-net.ipv4.tcp_max_syn_backlog=1024
-net.core.somaxconn = 10240
+net.ipv4.tcp_max_tw_buckets = 20000
+net.core.somaxconn = 65535
+net.ipv4.tcp_tw_recycle = 0
+fs.file-max = 65535
+fs.nr_open = 65535
 net.ipv4.tcp_fin_timeout = 30
 net.netfilter.nf_conntrack_tcp_be_liberal = 1
 net.netfilter.nf_conntrack_tcp_loose = 1
 net.netfilter.nf_conntrack_max = 3200000
 net.netfilter.nf_conntrack_buckets = 1600512
 net.netfilter.nf_conntrack_tcp_timeout_time_wait = 30
+net.ipv4.tcp_max_syn_backlog = 262144
 net.ipv4.tcp_timestamps = 1
 kernel.msgmax = 65536
 kernel.msgmnb = 163840
+vm.max_map_count = 262144
 EOF
     sysctl --system
 
-    modprobe br_netfilter
+
+    # open file optimization
+    tee /etc/security/limits.d/20-nofile.conf << EOF
+root soft nofile 65535
+root hard nofile 65535
+* soft nofile 65535
+* hard nofile 65535
+EOF
+
+    tee /etc/security/limits.d/20-nproc.conf << EOF
+*    -     nproc   65535
+root soft  nproc  unlimited
+root hard  nproc  unlimited
+EOF
 
     if [ $(cut -f1 -d ' '  /proc/modules \
            | grep -e ip_vs -e nf_conntrack_ipv4 \
@@ -153,8 +177,8 @@ function setrepository
 
 function checkpkg
 {
-    local rigistry_server='http://registry.ipt-gitlab:8081'
-    local kube_version='1.15.1'
+    local rigistry_server=__docker_registry__
+    local kube_version=__revision__
     local packages=(kubectl
                     kubelet
                     kubeadm
@@ -168,7 +192,8 @@ function checkpkg
                     keepalived
                     tree
                     ntpdate
-                    bash-completion)
+                    bash-completion
+                    jq)
     # setting the kubernates repository
     tee /etc/yum.repos.d/kubernetes.repo << EOF
 [kubernetes]
@@ -207,7 +232,7 @@ EOF
                         yum --enablerepo=epel install $p -y
                     fi
                     ;;
-                "nc"|"ipvsadm"|"bridge-utils"|"haproxy"|"keepalived"|"ntpdate"|"bash-completion")
+                "nc"|"ipvsadm"|"bridge-utils"|"haproxy"|"keepalived"|"ntpdate"|"bash-completion"|"jq")
                     yum install -y $p
                     if [ $? -ne 0 ]; then
                         yum --enablerepo=epel install $p -y
